@@ -1,5 +1,7 @@
 WireLib = WireLib or {}
 
+WireLib.Compatibility = true -- define some deprecated WireLib methods
+
 local pairs = pairs
 local setmetatable = setmetatable
 local rawget = rawget

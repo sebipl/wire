@@ -94,6 +94,7 @@ include("wire/von.lua")
 -- server includes
 if SERVER then
 	include("wire/server/wirelib.lua")
+	include("wire/server/wirelib_compat.lua")
 	include("wire/server/modelplug.lua")
 	include("wire/server/radiolib.lua")
 	include("wire/server/debuggerlib.lua")
@@ -120,7 +121,7 @@ if CLIENT then
 	include("wire/client/rendertarget_fix.lua")
 	include("wire/client/hlzasm/hc_compiler.lua")
 	include("wire/client/customspawnmenu.lua")
-	
+
 end
 
 -- Load UWSVN, done here so its definitely after Wire is loaded.
