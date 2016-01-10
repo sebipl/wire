@@ -71,15 +71,28 @@ function e2_get_typeid(typename)
 	return nil
 end
 
+local function parse_list(args, callback)
+	local function handle_arg(arg)
+		-- invoke callback with the trimmed argument
+		return callback(arg:match("^%s*(.-)%s*$")
+	end
+
+	-- find the argument before the first comma
+	local firstarg = args:find(",") or (args:len() + 1)
+	firstarg = args:sub(1, firstarg - 1)
+	-- handle it
+	callback(firstarg)
+
+	-- find and handle the remaining arguments.
+	args:gsub(",([^,]*)", callback)
+end
+
 -- parses an argument list
 function e2_parse_args(args)
 	local ellipses = false
 	local argtable = { typeids = {}, argnames = {} }
 	if args:find("%S") == nil then return argtable end -- no arguments
 	local function handle_arg(arg)
-		-- trim argument
-		arg = arg:match("^%s*(.-)%s*$")
-
 		-- ellipses before this argument? raise error
 		if ellipses then error("PP syntax error: Ellipses (...) must be the last argument.", 0) end
 		-- is this argument an ellipsis?
@@ -111,14 +124,8 @@ function e2_parse_args(args)
 		return false
 	end
 
-	-- find the argument before the first comma
-	local firstarg = args:find(",") or (args:len() + 1)
-	firstarg = args:sub(1, firstarg - 1)
-	-- handle it
-	handle_arg(firstarg)
-
-	-- find and handle the remaining arguments.
-	args:gsub(",([^,]*)", handle_arg)
+	-- parse the list with our handler
+	parse_list(args, handle_arg)
 	return argtable, ellipses
 end
 
