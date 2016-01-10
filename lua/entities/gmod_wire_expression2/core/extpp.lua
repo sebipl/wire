@@ -7,6 +7,7 @@ local p_typeid = "[a-z][a-z0-9]?[a-z0-9]?[a-z0-9]?[a-z0-9]?"
 local p_argname = "[a-zA-Z][a-zA-Z0-9_]*"
 local p_funcname = "[a-z][a-zA-Z0-9]*"
 local p_func_operator = "[-a-zA-Z0-9+*/%%^=!><&|$_%[%]]*"
+local p_typename_list = "[a-z][a-z0-9,%s]*"
 
 local OPTYPE_FUNCTION
 local OPTYPE_NORMAL = 0
@@ -129,6 +130,26 @@ function e2_parse_args(args)
 	return argtable, ellipses
 end
 
+-- parses a return type list
+function e2_parse_types(typenames)
+	local typeids = {}
+	if typenames:find("%S") == nil then return typeids end -- no return types
+	local function handle_typename(typename)
+		-- Retrieve the given type if it exists
+		local typeid = e2_get_typeid(typename)
+
+		-- return type not found => throw an error
+		if not typeid then error("PP syntax error: Invalid return type: '" .. typename .. "'", 0) end
+
+		table.insert(typeids, typeid)
+		return false
+	end
+
+	-- parse the list with our handler
+	parse_list(typenames, handle_typename)
+	return typeids
+end
+
 local function mangle(name, arg_typeids, op_type)
 	if op_type then name = "operator_" .. name end
 	local ret = "e2_" .. name
@@ -213,7 +234,7 @@ function e2_extpp_pass2(contents)
 
 	-- This flag helps determine whether the preprocessor changed, so we can tell the environment about it.
 	local changed = false
-	for h_begin, ret, thistype, colon, name, args, whitespace, equals, h_end in contents:gmatch("()e2function%s+(" .. p_typename .. ")%s+([a-z0-9]-)%s*(:?)%s*(" .. p_func_operator .. ")%(([^)]*)%)(%s*)(=?)()") do
+	for h_begin, ret, thistype, colon, name, args, whitespace, equals, h_end in contents:gmatch("()e2function%s+(" .. p_typename_list .. ")%s+([a-z0-9]-)%s*(:?)%s*(" .. p_func_operator .. ")%(([^)]*)%)(%s*)(=?)()") do
 		changed = true
 
 		local function handle_function()
@@ -252,16 +273,13 @@ function e2_extpp_pass2(contents)
 			-- op_type is nil if we register a function and a number if it as operator
 			local name, regfn, op_type = handleop(name)
 
-			local ret_typeid
+			local ret_typeids
 			if ret == "void" then
 				-- void means "returns nothing", i.e. "" in registerFunctionese
-				ret_typeid = ""
+				ret_typeids = ""
 			else
-				-- For all other typenames, query return type from E2
-				ret_typeid = e2_get_typeid(ret)
-
-				-- return type not found => throw an error
-				if not ret_typeid then error("PP syntax error: Invalid return type: '" .. ret .. "'", 0) end
+				-- For all other typenames, parse return type list
+				ret_typeids = table.concat(e2_parse_types(ret))
 			end
 
 			-- if "typename:" was found in front of the function name
@@ -308,7 +326,7 @@ function e2_extpp_pass2(contents)
 				-- mark the argument as "no opfetch"
 				argtable.no_opfetch[1] = true
 			elseif op_type == OPTYPE_APPEND_RET then
-				table.insert(argtable.typeids, 1, ret_typeid .. "=")
+				table.insert(argtable.typeids, 1, ret_typeids .. "=")
 			end
 
 			-- -- prepare some variables needed to generate the function header and the registerFunction line -- --
@@ -322,11 +340,11 @@ function e2_extpp_pass2(contents)
 			if aliasflag then
 				if aliasflag == 1 then
 					-- left hand side of an alias definition
-					aliasdata = { regfn, name, arg_typeids, ret_typeid }
+					aliasdata = { regfn, name, arg_typeids, ret_typeids }
 				elseif aliasflag == 2 then
 					-- right hand side of an alias definition
-					regfn, name, arg_typeids, ret_typeid = unpack(aliasdata)
-					table.insert(function_register, ('if %s then %s(%q, %q, %q, %s) end\n'):format(mangled_name, regfn, name, arg_typeids, ret_typeid, mangled_name))
+					regfn, name, arg_typeids, ret_typeids = unpack(aliasdata)
+					table.insert(function_register, ('if %s then %s(%q, %q, %q, %s) end\n'):format(mangled_name, regfn, name, arg_typeids, ret_typeids, mangled_name))
 				end
 			else
 				-- save tempcost
@@ -334,7 +352,7 @@ function e2_extpp_pass2(contents)
 				locals[mangled_name] = true
 				if ellipses then
 					-- generate a registerFunction line
-					table.insert(function_register, string.format('if %s then %s(%q, %q, %q, %s) end\n', mangled_name, regfn, name, arg_typeids .. "...", ret_typeid, mangled_name))
+					table.insert(function_register, string.format('if %s then %s(%q, %q, %q, %s) end\n', mangled_name, regfn, name, arg_typeids .. "...", ret_typeids, mangled_name))
 
 					-- generate a new function header and append it to the output
 					table.insert(output, 'function ' .. mangled_name .. '(self, args, typeids, ...)')
@@ -354,7 +372,7 @@ function e2_extpp_pass2(contents)
 					table.insert(output, " end")
 				else
 					-- generate a registerFunction line
-					table.insert(function_register, string.format('if %s then %s(%q, %q, %q, %s, tempcosts[%q], %s) end\n', mangled_name, regfn, name, arg_typeids, ret_typeid, mangled_name, mangled_name, makestringtable(argtable.argnames, (thistype ~= "") and 2 or 1)))
+					table.insert(function_register, string.format('if %s then %s(%q, %q, %q, %s, tempcosts[%q], %s) end\n', mangled_name, regfn, name, arg_typeids, ret_typeids, mangled_name, mangled_name, makestringtable(argtable.argnames, (thistype ~= "") and 2 or 1)))
 
 					-- generate a new function header and append it to the output
 					table.insert(output, 'function ' .. mangled_name .. '(self, args)')
